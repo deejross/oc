@@ -53,6 +53,7 @@ import (
 	"github.com/openshift/oc/pkg/cli/startbuild"
 	"github.com/openshift/oc/pkg/cli/status"
 	"github.com/openshift/oc/pkg/cli/tag"
+	"github.com/openshift/oc/pkg/cli/tools"
 	"github.com/openshift/oc/pkg/cli/version"
 	"github.com/openshift/oc/pkg/cli/whoami"
 	cmdutil "github.com/openshift/oc/pkg/helpers/cmd"
@@ -221,6 +222,7 @@ func NewOcCommand(in io.Reader, out, errout io.Writer) *cobra.Command {
 				image.NewCmdImage(f, ioStreams),
 				registry.NewCmd(f, ioStreams),
 				idle.NewCmdIdle(f, ioStreams),
+				tools.NewCmdTools(f, ioStreams),
 				kubectlwrappers.NewCmdApiVersions(f, ioStreams),
 				kubectlwrappers.NewCmdApiResources(f, ioStreams),
 				kubectlwrappers.NewCmdClusterInfo(f, ioStreams),
