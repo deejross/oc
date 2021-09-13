@@ -47,6 +47,7 @@ type ToolsOptions struct {
 	Remove     string
 	BinaryPath string
 	Address    string
+	Version    string
 	client     *ToolsClient
 
 	genericclioptions.IOStreams
@@ -78,6 +79,7 @@ func NewCmdTools(f kcmdutil.Factory, ioStreams genericclioptions.IOStreams) *cob
 	flags.StringVar(&o.Remove, "remove", "", "Remove a tool from this machine")
 	flags.StringVar(&o.BinaryPath, "binary-path", "", "Path for binaries (default's to user's `bin` directory")
 	flags.StringVar(&o.Address, "address", "", "The address for the openshift-cli-manager service (auto-discovered)")
+	flags.StringVar(&o.Version, "version", "", "Specific version of a tool to install")
 	return cmd
 }
 
@@ -118,7 +120,7 @@ func (o *ToolsOptions) Run() error {
 }
 
 func (o *ToolsOptions) available() error {
-	list, err := o.client.List()
+	list, err := o.client.List(&ListOptions{Platform: fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)})
 	if err != nil {
 		return err
 	}
@@ -126,27 +128,22 @@ func (o *ToolsOptions) available() error {
 	w := tabwriter.NewWriter(o.Out, 0, 4, 2, ' ', 0)
 	defer w.Flush()
 
-	fmt.Fprintf(w, "\tNAME\tDESCRIPTION\n")
+	fmt.Fprintf(w, "\tNAME\tDESCRIPTION\tVERSION\n")
 
 	for _, tool := range list.Items {
-		for _, bin := range tool.Spec.Binaries {
-			if bin.Architecture == runtime.GOARCH && bin.OS == runtime.GOOS {
-				fmt.Fprintf(w, "\t%s\t%s\n", tool.Name, tool.Spec.Description)
-				break
-			}
-		}
+		fmt.Fprintf(w, "\t%s\t%s\t%s\n", tool.Name, tool.Description, tool.LatestVersion)
 	}
 
 	return nil
 }
 
 func (o *ToolsOptions) installed() error {
-	list, err := o.client.List()
+	list, err := o.client.List(&ListOptions{Platform: fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)})
 	if err != nil {
 		return err
 	}
 
-	tools := map[string]CLITool{}
+	tools := map[string]HTTPCLIToolListItem{}
 	for _, tool := range list.Items {
 		tools[tool.Name] = tool
 	}
@@ -159,7 +156,7 @@ func (o *ToolsOptions) installed() error {
 	w := tabwriter.NewWriter(o.Out, 0, 4, 2, ' ', 0)
 	defer w.Flush()
 
-	fmt.Fprintf(w, "\tNAME\tDESCRIPTION\n")
+	fmt.Fprintf(w, "\tNAME\tDESCRIPTION\tVERSION\n")
 
 	for _, file := range files {
 		if file.IsDir() {
@@ -168,7 +165,19 @@ func (o *ToolsOptions) installed() error {
 
 		name := strings.TrimSuffix(filepath.Base(file.Name()), ".exe")
 		if tool, ok := tools[name]; ok {
-			fmt.Fprintf(w, "\t%s\t%s\n", tool.Name, tool.Spec.Description)
+			filename := filepath.Join(o.BinaryPath, file.Name())
+			digest, err := CalculateDigest(filename)
+			if err != nil {
+				return err
+			}
+
+			version := "Unknown"
+			info, _ := o.client.InfoFromDigest(digest)
+			if info != nil && info.Versions != nil && len(info.Versions) > 0 {
+				version = info.Versions[len(info.Versions)-1].Version
+			}
+
+			fmt.Fprintf(w, "\t%s\t%s\t%s\n", tool.Name, tool.Description, version)
 		}
 	}
 
@@ -178,7 +187,7 @@ func (o *ToolsOptions) installed() error {
 func (o *ToolsOptions) install() error {
 	name := o.Install
 
-	list, err := o.client.List()
+	list, err := o.client.List(&ListOptions{Platform: fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)})
 	if err != nil {
 		return err
 	}
@@ -190,7 +199,8 @@ func (o *ToolsOptions) install() error {
 				path += ".exe"
 			}
 
-			return o.client.Download(tool, runtime.GOOS, runtime.GOARCH, path)
+			opts := &DownloadOptions{Version: o.Version}
+			return o.client.Download(tool.Namespace, tool.Name, fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH), path, opts)
 		}
 	}
 
